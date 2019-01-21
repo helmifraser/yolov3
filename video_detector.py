@@ -60,6 +60,40 @@ def draw_bbox(imgs, bbox, colors, classes):
     cv2.rectangle(img, p3, p4, color, -1)
     cv2.putText(img, label, p1, cv2.FONT_HERSHEY_SIMPLEX, 1, [225, 255, 255], 1)
 
+def parse_detection(detection):
+    # Returns detection data in the form: [[class id, x1, y1, x2, y2, objectness score, prediction score], ... ]
+    parsed = detection.detach().numpy()
+    np.rint(parsed[:, :5], out=parsed[:, :5])
+    parsed = np.roll(parsed[:, 1:], 1, axis=1)[:, :7]
+    return parsed
+
+def write_detection(file, parsed_detections, frame_number, filter=[None, None]):
+    shape = parsed_detections.shape
+    detection_string = ""
+    for idx, detection in enumerate(parsed_detections):
+        # Filter out car dash, don't care about it
+        if filter[0] is not None:
+            if detection[0] == 2:
+                if ((detection[3] - detection[1]) >= int(filter[0]*0.95)):
+                    continue
+
+        if idx == shape[0] - 1:
+            detection_string += "{}, {}, {}, {}, {}, {}, {}, {}\n".format(frame_number, *detection)
+            continue
+
+        detection_string += "{}, {}, {}, {}, {}, {}, {}, {}, ".format(frame_number, *detection)
+    file.write(detection_string)
+    # print("bbox: {}".format(detection_string))
+
+def save_detections(file=None, detections=None, frame_number=0, filter=[None, None]):
+    if file is None:
+        print("No file specified!")
+        sys.exit(1)
+    parsed = parse_detection(detections)
+    write_detection(file, parsed,frame_number, filter)
+
+    return True
+
 def detect_video(model, args):
 
     input_size = [int(model.net_info['height']), int(model.net_info['width'])]
@@ -80,6 +114,9 @@ def detect_video(model, args):
     read_frames = 0
 
     start_time = datetime.now()
+
+    bounding_boxes_file = open('./bbox_' + osp.basename(args.input).rsplit('.')[0] + '.csv','a+')
+
     print('Detecting...')
     while cap.isOpened():
         total_tic = time.time()
@@ -97,6 +134,10 @@ def detect_video(model, args):
             detections = process_result(detections, args.obj_thresh, args.nms_thresh)
             if len(detections) != 0:
                 detections = transform_result(detections, [frame], input_size)
+                # print("Before: \n {}".format(detections))
+                saved = save_detections(bounding_boxes_file, detections, read_frames, [width*0.2, height*0.2])
+                # print("After: \n {}".format(parsed))
+
                 for detection in detections:
                     draw_bbox([frame], detection, colors, classes)
 
@@ -111,6 +152,14 @@ def detect_video(model, args):
                 print('Number of frames processed:', read_frames)
             if not args.no_show and cv2.waitKey(1) & 0xFF == ord('q'):
                 break
+            elif cv2.waitKey(1) & 0xFF == ord('p'):
+                print("Saving frame and bbox")
+                cv2.imwrite("frame.png", frame)
+                bounding_boxes = open('./bbox_' + str(read_frames) + '.csv','a+')
+                for i, detection in enumerate(detections):
+                    print("Writing detection {} to file".format(i))
+                    bounding_boxes.write(str(detection) + '\n')
+                bounding_boxes.close()
         else:
             break
 
@@ -118,6 +167,7 @@ def detect_video(model, args):
     print('Detection finished in %s' % (end_time - start_time))
     print('Total frames:', read_frames)
     cap.release()
+    bounding_boxes_file.close()
 
     if not args.no_show:
         cv2.destroyAllWindows()
