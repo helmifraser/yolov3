@@ -70,27 +70,40 @@ def parse_detection(detection):
 def write_detection(file, parsed_detections, frame_number, filter=[None, None]):
     shape = parsed_detections.shape
     detection_string = ""
+    bad_first = False
     for idx, detection in enumerate(parsed_detections):
         # Filter out car dash, don't care about it
         if filter[0] is not None:
-            if detection[0] == 2:
-                if ((detection[3] - detection[1]) >= int(filter[0]*0.95)):
-                    continue
+            if ((detection[3] - detection[1]) >= int(filter[0]*0.8)):
+                print("Filtered out {} at frame {}".format(detection[0], frame_number))
+                if idx == 0:
+                    bad_first = True
+                continue
+
+        data = "{}, {}, {}, {}, {}, {}, {}, ".format(*detection)
+
+        if idx == 0 or (bad_first and len(detection_string) == 0):
+            data = "{}, ".format(frame_number) + data
 
         if idx == shape[0] - 1:
-            detection_string += "{}, {}, {}, {}, {}, {}, {}, {}\n".format(frame_number, *detection)
-            continue
+            data = data[:-2] + "\n"
 
-        detection_string += "{}, {}, {}, {}, {}, {}, {}, {}, ".format(frame_number, *detection)
+        detection_string += data
+
     file.write(detection_string)
-    # print("bbox: {}".format(detection_string))
+
 
 def save_detections(file=None, detections=None, frame_number=0, filter=[None, None]):
     if file is None:
         print("No file specified!")
-        sys.exit(1)
-    parsed = parse_detection(detections)
-    write_detection(file, parsed,frame_number, filter)
+        return False
+
+    try:
+        parsed = parse_detection(detections)
+        write_detection(file, parsed,frame_number, filter)
+    except Exception as e:
+        print("Error: {}".format(e))
+        return False
 
     return True
 
@@ -105,6 +118,7 @@ def detect_video(model, args):
         cap = cv2.VideoCapture(int(args.input))
         output_path = osp.join(args.outdir, 'det_webcam.avi')
     else:
+        window = cv2.namedWindow(args.input, cv2.WINDOW_NORMAL)
         cap = cv2.VideoCapture(args.input)
         output_path = osp.join(args.outdir, 'det_' + osp.basename(args.input).rsplit('.')[0] + '.avi')
 
@@ -115,7 +129,8 @@ def detect_video(model, args):
 
     start_time = datetime.now()
 
-    bounding_boxes_file = open('./bbox_' + osp.basename(args.input).rsplit('.')[0] + '.csv','a+')
+    outpath = os.path.dirname(args.input) + '/' + osp.basename(args.input).rsplit('.')[0] + '.csv'
+    bounding_boxes_file = open(outpath,'w+')
 
     print('Detecting...')
     while cap.isOpened():
@@ -134,17 +149,20 @@ def detect_video(model, args):
             detections = process_result(detections, args.obj_thresh, args.nms_thresh)
             if len(detections) != 0:
                 detections = transform_result(detections, [frame], input_size)
-                # print("Before: \n {}".format(detections))
+
                 saved = save_detections(bounding_boxes_file, detections, read_frames, [width*0.2, height*0.2])
-                # print("After: \n {}".format(parsed))
+
+                if not saved:
+                    print("Something went wrong saving boundary boxes to file :(")
+                    sys.exit(1)
 
                 for detection in detections:
                     draw_bbox([frame], detection, colors, classes)
 
             if not args.no_show:
-                cv2.imshow('frame', frame)
+                cv2.imshow(args.input, frame)
 
-            if read_frames % 30 == 0:
+            if read_frames % 120 == 0:
                 total_toc = time.time()
                 total_time = total_toc - total_tic
                 frame_rate = 1 / total_time
@@ -171,8 +189,6 @@ def detect_video(model, args):
 
     if not args.no_show:
         cv2.destroyAllWindows()
-
-    print('Detected video saved to ' + output_path)
 
     return
 
