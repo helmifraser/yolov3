@@ -28,12 +28,13 @@ def load_classes(namesfile):
 
 def parse_args():
     parser = argparse.ArgumentParser(description='YOLOv3 object detection')
-    parser.add_argument('-i', '--input', required=True, help='input image or directory or video')
+    parser.add_argument('-i', '--input', default=None, help='input image or directory or video')
     parser.add_argument('-t', '--obj-thresh', type=float, default=0.5, help='objectness threshold, DEFAULT: 0.5')
     parser.add_argument('-n', '--nms-thresh', type=float, default=0.4, help='non max suppression threshold, DEFAULT: 0.4')
     parser.add_argument('-o', '--outdir', default='detection', help='output directory, DEFAULT: detection/')
     parser.add_argument('-v', '--video', action='store_true', default=False, help='flag for detecting a video input')
     parser.add_argument('-w', '--webcam', action='store_true',  default=False, help='flag for detecting from webcam. Specify webcam ID in the input. usually 0 for a single webcam connected')
+    parser.add_argument('-vd', '--video_directory', default=None, help='path to folder of videos')
     parser.add_argument('--cuda', action='store_true', default=False, help='flag for running on GPU')
     parser.add_argument('--no-show', action='store_true', default=False, help='do not show the detected video in real time')
 
@@ -75,7 +76,7 @@ def write_detection(file, parsed_detections, frame_number, filter=[None, None]):
         # Filter out car dash, don't care about it
         if filter[0] is not None:
             if ((detection[3] - detection[1]) >= int(filter[0]*0.8)):
-                print("Filtered out {} at frame {}".format(detection[0], frame_number))
+                # print("Filtered out {} at frame {}".format(detection[0], frame_number))
                 if idx == 0:
                     bad_first = True
                 continue
@@ -107,7 +108,7 @@ def save_detections(file=None, detections=None, frame_number=0, filter=[None, No
 
     return True
 
-def detect_video(model, args):
+def detect_video(model, args, video_path):
 
     input_size = [int(model.net_info['height']), int(model.net_info['width'])]
 
@@ -118,9 +119,10 @@ def detect_video(model, args):
         cap = cv2.VideoCapture(int(args.input))
         output_path = osp.join(args.outdir, 'det_webcam.avi')
     else:
-        window = cv2.namedWindow(args.input, cv2.WINDOW_NORMAL)
-        cap = cv2.VideoCapture(args.input)
-        output_path = osp.join(args.outdir, 'det_' + osp.basename(args.input).rsplit('.')[0] + '.avi')
+        if not args.no_show:
+            window = cv2.namedWindow(video_path, cv2.WINDOW_NORMAL)
+        cap = cv2.VideoCapture(video_path)
+        output_path = osp.join(args.outdir, 'det_' + osp.basename(video_path).rsplit('.')[0] + '.avi')
 
     width, height = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     fps = cap.get(cv2.CAP_PROP_FPS)
@@ -129,10 +131,10 @@ def detect_video(model, args):
 
     start_time = datetime.now()
 
-    outpath = os.path.dirname(args.input) + '/' + osp.basename(args.input).rsplit('.')[0] + '.csv'
+    outpath = os.path.dirname(video_path) + '/' + osp.basename(video_path).rsplit('.')[0] + '.csv'
     bounding_boxes_file = open(outpath,'w+')
 
-    print('Detecting...')
+    # print('Detecting...')
     while cap.isOpened():
         total_tic = time.time()
         retflag, frame = cap.read()
@@ -160,14 +162,14 @@ def detect_video(model, args):
                     draw_bbox([frame], detection, colors, classes)
 
             if not args.no_show:
-                cv2.imshow(args.input, frame)
+                cv2.imshow(video_path, frame)
 
-            if read_frames % 120 == 0:
-                total_toc = time.time()
-                total_time = total_toc - total_tic
-                frame_rate = 1 / total_time
-                print('Frame rate:', frame_rate)
-                print('Number of frames processed:', read_frames)
+            # if read_frames % 120 == 0:
+            #     total_toc = time.time()
+            #     total_time = total_toc - total_tic
+            #     frame_rate = 1 / total_time
+            #     print('Frame rate:', frame_rate)
+            #     print('Number of frames processed:', read_frames)
             if not args.no_show and cv2.waitKey(1) & 0xFF == ord('q'):
                 break
             elif cv2.waitKey(1) & 0xFF == ord('p'):
@@ -182,8 +184,8 @@ def detect_video(model, args):
             break
 
     end_time = datetime.now()
-    print('Detection finished in %s' % (end_time - start_time))
-    print('Total frames:', read_frames)
+    # print('Detection finished in %s' % (end_time - start_time))
+    # print('Total frames:', read_frames)
     cap.release()
     bounding_boxes_file.close()
 
@@ -245,10 +247,15 @@ def main():
         print("ERROR: cuda is not available, try running on CPU")
         sys.exit(1)
 
-    if not os.path.exists(args.input):
-        print("Video file doesn't exist at: {}".format(args.input))
-        sys.exit(1)
+    if args.input is not None:
+        if not os.path.exists(args.input):
+            print("Video file doesn't exist at: {}".format(args.input))
+            sys.exit(1)
 
+    if args.video_directory is not None:
+        if not os.path.exists(args.video_directory):
+            print("Directory of videos specified in --vd does not exist")
+            sys.exit(1)
 
     print('Loading network...')
     model = Darknet("cfg/yolov3.cfg")
@@ -259,9 +266,51 @@ def main():
     model.eval()
     print('Network loaded')
 
-    if args.video:
-        detect_video(model, args)
+    if args.video_directory is not None:
+        print('walk_dir = ' + args.video_directory)
 
+        count = 0
+        count_discard = 0
+        count_error = 0
+        acceptable_ext = ['mp4', 'MP4', 'mov', 'MOV', 'wmv', 'avi', 'WMV', 'AVI', 'mpeg', \
+                            'mkv', 'mpg', 'm4v']
+        processing_log = open("processing_log.txt", 'w+')
+        failure_log = open("failure_log.txt", 'w+')
+
+        for root, subdirs, files in os.walk(args.video_directory):
+            for filename in files:
+                file_path = os.path.join(root, filename)
+
+                if filename.rsplit('.')[-1] not in acceptable_ext:
+                    count_discard += 1
+                    continue
+
+                try:
+                    count += 1
+                    print("Processing: {} ... ".format(file_path), end='', flush=True)
+                    detect_video(model, args, file_path)
+                    print("success!", flush=True)
+                    processing_log.write(file_path + "\n")
+                except Exception as e:
+                    print("failed!", flush=True)
+                    failure_log.write(file_path + "\n")
+
+
+        status = "\nFiles found: {}".format(count)
+        discarded = "\nFiles discarded due to extension: {}".format(count_discard)
+        error = "\nFiles with error in processing: {}".format(count_error)
+
+        print(status)
+        print(discarded)
+        print(error)
+
+        processing_log.write(status)
+        failure_log.write(error)
+        processing_log.close()
+        failure_log.close()
+
+    elif args.video:
+        detect_video(model, args, args.input)
     else:
         detect_image(model, args)
 
