@@ -140,7 +140,8 @@ def detect_video(model, args, video_path):
         retflag, frame = cap.read()
         read_frames += 1
         if retflag:
-            frame = cv2.resize(frame, None, fx=0.2, fy=0.2, interpolation = cv2.INTER_CUBIC)
+            frame = cv2.resize(frame, (256, 144), interpolation = cv2.INTER_CUBIC)
+            # frame = cv2.resize(frame, None, fx=0.2, fy=0.2, interpolation = cv2.INTER_CUBIC)
             frame_tensor = cv_image2tensor(frame, input_size).unsqueeze(0)
             frame_tensor = Variable(frame_tensor)
 
@@ -277,6 +278,13 @@ def main():
         processing_log = open("processing_log.txt", 'w+')
         failure_log = open("failure_log.txt", 'w+')
 
+        log_count = 0
+        for root, subdirs, files in os.walk(args.video_directory):
+            for filename in files:
+                if filename.rsplit('.')[-1] not in acceptable_ext:
+                    continue
+                log_count += 1
+
         for root, subdirs, files in os.walk(args.video_directory):
             for filename in files:
                 file_path = os.path.join(root, filename)
@@ -287,12 +295,25 @@ def main():
 
                 try:
                     count += 1
-                    print("Processing: {} ... ".format(file_path), end='', flush=True)
+                    cap = cv2.VideoCapture(file_path)
+                    width, height = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
+                    if width == 1280 and height == 720:
+                        if os.path.isfile(file_path.rsplit('.', 1)[0] + ".csv"):
+                            print("No need to process {}, video is 720p and there is already a .csv".format(file_path))
+                            cap.release()
+                            continue
+
+                    cap.release()
+                    print("Processing {}/{}: {} ... ".format(count, log_count, file_path), end='', flush=True)
                     detect_video(model, args, file_path)
                     print("success!", flush=True)
                     processing_log.write(file_path + "\n")
                 except Exception as e:
                     print("failed!", flush=True)
+                    exc_type, exc_obj, exc_tb = sys.exc_info()
+                    fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
+                    print("Error: {} {} line {} {}".format(exc_type, fname, exc_tb.tb_lineno, e))
                     failure_log.write(file_path + "\n")
 
 
