@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 import sys
 
-def load_csv(csv_filepath):
+def load_csv(csv_filepath, x_filter=220):
     """Parses .csv into a dictionary of numpy ndarrays. Each key is the frame
         number with each entry in the ndarray corresponding to each detected
         object in the frame."""
@@ -29,15 +29,19 @@ def load_csv(csv_filepath):
                 mod = idx % 7
 
                 object.append(float(value))
+
                 if mod == 0:
-                    csv.setdefault(key,[]).append(object)
+                    if (object[3] - object[1]) < x_filter:
+                        csv.setdefault(key,[]).append(object)
                     object = []
 
-            csv[key] = np.array(csv[key])
+            if len(csv[key]) != 0:
+                csv[key] = np.array(csv[key])
+            else:
+                del csv[key]
 
     # for key in sorted(csv, key=int):
     #     print("{}: {}".format(key, csv[key].shape))
-
     return csv
 
 def calc_centroid(points):
@@ -67,6 +71,13 @@ def dict_centroid(csv_dict):
 
     return dict
 
+def display(csv_file, centroid_dictionary):
+    for key in sorted(csv_file, key=int):
+        print("===========")
+        print("Frame: {}".format(key))
+        print(".csv file out: \n {}".format(csv_file[key]))
+        print("Centroids of objects: \n {}".format(centroid_dictionary[key]))
+
 def main():
     """Invoke only to test"""
     parser = argparse.ArgumentParser(description='boundary box util functions')
@@ -80,11 +91,8 @@ def main():
 
     dict = dict_centroid(csv)
 
-    for key in sorted(csv, key=int):
-        print("===========")
-        print("Frame: {}".format(key))
-        print(".csv file out: \n {}".format(csv[key]))
-        print("Centroids of objects: \n {}".format(dict[key]))
+    display(csv, dict)
+
 
 
 if __name__ == '__main__':
