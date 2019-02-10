@@ -3,15 +3,19 @@ import pandas as pd
 import numpy as np
 import sys
 
+import magic
+
 def load_csv(csv_filepath, x_filter=220):
     """Parses .csv into a dictionary of numpy ndarrays. Each key is the frame
         number with each entry in the ndarray corresponding to each detected
         object in the frame."""
 
     csv = {}
-
+    # print("load_csv: {}".format(csv_filepath))
     with open(csv_filepath, 'r') as f:
+        count = 0
         for line in f:
+            count += 1
             split = line.rsplit(',')
             key = str(split[0])
             csv.setdefault(key, [])
@@ -20,6 +24,7 @@ def load_csv(csv_filepath, x_filter=220):
             object = []
 
             for idx, value in enumerate(split):
+                # print(idx)
                 if idx == 0:
                     continue
 
@@ -27,8 +32,14 @@ def load_csv(csv_filepath, x_filter=220):
                     value = value.replace("\n","")
 
                 mod = idx % 7
-
-                object.append(float(value))
+                try:
+                    object.append(float(value))
+                except Exception as e:
+                    if value == " ":
+                        print("=====================")
+                        print("Error loading value from .csv, ommitting")
+                        print("file: {} line:{} type: {} value: {}".format(csv_filepath, count, type(value), value))
+                        print("=====================")
 
                 if mod == 0:
                     if (object[3] - object[1]) < x_filter:
