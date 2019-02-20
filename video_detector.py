@@ -131,7 +131,7 @@ def detect_video(model, args, video_path):
 
     start_time = datetime.now()
 
-    outpath = os.path.dirname(video_path) + '/' + osp.basename(video_path).rsplit('.')[0] + '.csv'
+    outpath = os.path.dirname(video_path) + '/' + osp.basename(video_path).rsplit('.', 1)[0] + '.csv'
     bounding_boxes_file = open(outpath,'w+')
 
     # print('Detecting...')

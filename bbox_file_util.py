@@ -5,7 +5,7 @@ import sys
 
 import magic
 
-def load_csv(csv_filepath, x_filter=220):
+def load_csv(csv_filepath, x_filter=220, verbose=False):
     """Parses .csv into a dictionary of numpy ndarrays. Each key is the frame
         number with each entry in the ndarray corresponding to each detected
         object in the frame."""
@@ -35,7 +35,7 @@ def load_csv(csv_filepath, x_filter=220):
                 try:
                     object.append(float(value))
                 except Exception as e:
-                    if value == " ":
+                    if value == " " and verbose:
                         print("=====================")
                         print("Error loading value from .csv, ommitting")
                         print("file: {} line:{} type: {} value: {}".format(csv_filepath, count, type(value), value))
