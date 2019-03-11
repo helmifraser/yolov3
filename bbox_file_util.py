@@ -3,8 +3,6 @@ import pandas as pd
 import numpy as np
 import sys
 
-import magic
-
 def load_csv(csv_filepath, x_filter=220, verbose=False):
     """Parses .csv into a dictionary of numpy ndarrays. Each key is the frame
         number with each entry in the ndarray corresponding to each detected
